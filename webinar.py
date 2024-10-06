@@ -1,4 +1,6 @@
+import json
 import logging
+import re
 import shutil
 import subprocess
 from functools import partial
@@ -81,7 +83,7 @@ class Dumper:
         :param url: File URL.
 
         """
-        LOGGER.info('Getting video chunk names ...')
+        LOGGER.info(f'Getting video chunks from playlist {url} ...')
 
         playlist = self._get_response_simple(url)
         chunk_lists = []
@@ -89,7 +91,7 @@ class Dumper:
         for line in playlist.splitlines():
             line = line.strip()
 
-            if not line.endswith('.ts'):
+            if not line.partition('?')[0].endswith('.ts'):
                 continue
 
             chunk_lists.append(line)
@@ -122,7 +124,7 @@ class Dumper:
 
             LOGGER.info(f'Get {idx}/{chunks_total} ({chunk_name}) [{percent}%] ...')
 
-            chunk_url = f'{url_video_root}/{chunk_name}'
+            chunk_url = f'{url_video_root.rstrip("/")}/{chunk_name}'
 
             with self.session.get(chunk_url, headers=headers or {}, stream=True) as r:
                 r.raise_for_status()
@@ -132,7 +134,7 @@ class Dumper:
 
             sleep(choice([1, 0.5, 0.7, 0.6]))
 
-    def _chunks_to_video(self, path: Path) -> Path:
+    def _video_concat(self, path: Path) -> Path:
 
         LOGGER.info('Concatenating video ...')
 
@@ -160,6 +162,43 @@ class Dumper:
 
         return response.text
 
+    def _video_dump(
+        self,
+        *,
+        title: str,
+        url_playlist: str,
+        url_referer: str,
+        start_chunk: str = '',
+    ):
+        assert url_playlist.endswith('m3u8'), f'No playlist in `{url_playlist}`'
+
+        LOGGER.info(f'Title: {title}')
+
+        chunk_names = self._chunks_get_list(url_playlist)
+
+        LOGGER.info('Downloading video ...')
+
+        dump_dir = Path(title).absolute()
+        dump_dir.mkdir(exist_ok=True)
+
+        url_root = url_playlist.rpartition('/')[0]  # strip playlist filename
+
+        self._chunks_download(
+            url_video_root=url_root,
+            dump_dir=dump_dir,
+            chunk_names=chunk_names,
+            start_chunk=start_chunk,
+            headers={'Referer': url_referer}
+        )
+
+        fpath_video_target = Path(f'{title}.mp4').absolute()
+        fpath_video = self._video_concat(dump_dir)
+
+        shutil.move(fpath_video, fpath_video_target)
+        shutil.rmtree(dump_dir, ignore_errors=True)
+
+        LOGGER.info(f'Video is ready: {fpath_video_target}')
+
     def gather(self, **params):
         raise NotImplementedError
 
@@ -186,9 +225,6 @@ class WebinarRu(Dumper):
         :param url_chunklist: Video chunk list URL. Hint: ends with chunklist.m3u8
         :param start_chunk: Optional chunk name to continue download from.
         """
-        chunklist_postfix = '/chunklist.m3u8'
-        assert chunklist_postfix in url_chunklist, 'Provide chunklist.m3u8 URL to `url_chunklist`'
-
         assert 'record-new/' in url_entry, (
             'Unexpected entry URL format\n'
             f'Given:    {url_entry}.\n'
@@ -204,34 +240,62 @@ class WebinarRu(Dumper):
             json=True
         )
 
-        title = manifest['name']
-
-        LOGGER.info(f'Title: {title}')
-
-        chunk_names = self._chunks_get_list(url_chunklist)
-
-        LOGGER.info('Downloading video ...')
-
-        dump_dir = Path(title).absolute()
-        dump_dir.mkdir(exist_ok=True)
-
-        self._chunks_download(
-            url_video_root=url_chunklist.replace(chunklist_postfix, '', 1),
-            dump_dir=dump_dir,
-            chunk_names=chunk_names,
+        self._video_dump(
+            title=manifest['name'],
+            url_playlist=url_chunklist,
+            url_referer=url_entry,
             start_chunk=start_chunk,
-            headers={'Referer': url_entry}
         )
 
-        fpath_video_target = Path(f'{title}.mp4').absolute()
-        fpath_video = self._chunks_to_video(dump_dir)
 
-        shutil.move(fpath_video, fpath_video_target)
-        shutil.rmtree(dump_dir, ignore_errors=True)
+class YandexDisk(Dumper):
 
-        LOGGER.info(f'Video is ready: {fpath_video_target}')
+    user_input_map = {
+        'url_entry': 'Video entry URL (https://disk.yandex.ru/i/xxx)',
+    }
+
+    def _get_manifest(self, url: str) -> dict:
+        LOGGER.debug(f'Getting manifest from {url} ...')
+
+        contents = self._get_response_simple(url)
+        manifest = re.findall(r'id="store-prefetch">([^<]+)</script', contents)
+        assert manifest, f'Manifest not found for {url}'
+        manifest = manifest[0]
+        manifest = json.loads(manifest)
+        return manifest
+
+    def _get_playlist_and_title(self, manifest: dict) -> tuple[str, str]:
+
+        resources = list(manifest['resources'].values())
+        resource = resources[0]
+
+        dimension_max = 0
+        url_playlist = '<none>'
+
+        for stream_info in resource['videoStreams']['videos']:
+            dimension, *_ = stream_info['dimension'].partition('p')
+            if not dimension.isnumeric():
+                continue  # e.g. 'adaptive'
+            dimension = int(dimension)
+            if dimension_max < dimension:
+                dimension_max = dimension
+                url_playlist = stream_info['url']
+
+        return url_playlist, resource['name']
+
+    def gather(self, *, url_entry: str, start_chunk: str = ''):
+
+        manifest = self._get_manifest(url_entry)
+        url_playlist, title = self._get_playlist_and_title(manifest)
+
+        self._video_dump(
+            title=title,
+            url_playlist=url_playlist,
+            url_referer=url_entry,
+            start_chunk=start_chunk,
+        )
 
 
 if __name__ == '__main__':
-    dumper = WebinarRu()
+    dumper = YandexDisk()
     dumper.run()
