@@ -1,3 +1,4 @@
+#! /usr/bin/env python3
 import json
 import logging
 import re
@@ -55,6 +56,7 @@ class Dumper:
     def __init__(self):
         self.user_input_map = self.user_input_map or {}
         self.session = self._get_session()
+        self.sleepy = True
 
     @staticmethod
     def _get_user_input(prompt: str) -> str:
@@ -107,7 +109,7 @@ class Dumper:
         dump_dir: Path,
         chunk_names: list[str],
         start_chunk: str,
-        headers: dict[str, str] = None
+        headers: dict[str, str] = None,
     ) -> None:
 
         chunks_total = len(chunk_names)
@@ -128,11 +130,12 @@ class Dumper:
 
             with self.session.get(chunk_url, headers=headers or {}, stream=True) as r:
                 r.raise_for_status()
-                with open(dump_dir / chunk_name, 'wb') as f:
+                with open(dump_dir / chunk_name.partition('?')[0], 'wb') as f:
                     for chunk in r.iter_content(chunk_size=8192):
                         f.write(chunk)
 
-            sleep(choice([1, 0.5, 0.7, 0.6]))
+            if self.sleepy:
+                sleep(choice([1, 0.5, 0.7, 0.6]))
 
     def _video_concat(self, path: Path) -> Path:
 
