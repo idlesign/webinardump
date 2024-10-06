@@ -35,7 +35,22 @@ def configure_logging(
 configure_logging(logger=LOGGER)
 
 
+def get_user_input(prompt: str, *, choices: list[str] = None) -> str:
+
+    choices = set(choices or [])
+
+    while True:
+        data = input(f'{prompt}: ')
+        data = data.strip()
+        if not data or (choices and data not in choices):
+            continue
+
+        return data
+
+
 class Dumper:
+
+    title: str = ''
 
     _user_input_map: dict[str, str] = None
 
@@ -53,18 +68,19 @@ class Dumper:
         'Accept-Encoding': 'gzip, deflate, sdch, br',
     }
 
+    registry = []
+
+    def __init_subclass__(cls):
+        super().__init_subclass__()
+        cls.registry.append(cls)
+
     def __init__(self):
         self._user_input_map = self._user_input_map or {}
         self._session = self._get_session()
         self._sleepy = True
 
-    @staticmethod
-    def _get_user_input(prompt: str) -> str:
-        while True:
-            data = input(f'{prompt}: ')
-            data = data.strip()
-            if data:
-                return data
+    def __str__(self):
+        return self.title
 
     def _get_session(self) -> Session:
         session = requests.Session()
@@ -75,7 +91,7 @@ class Dumper:
         input_data = {}
 
         for param, hint in self._user_input_map.items():
-            input_data[param] = self._get_user_input(hint)
+            input_data[param] = get_user_input(hint)
 
         return input_data
 
@@ -211,6 +227,8 @@ class Dumper:
 
 class WebinarRu(Dumper):
 
+    title = 'webinar.ru'
+
     _user_input_map = {
         'url_video': 'Video URL (with `record-new/`)',
         'url_playlist': 'Video chunk list URL (with `chunklist.m3u8`)',
@@ -254,6 +272,8 @@ class WebinarRu(Dumper):
 
 
 class YandexDisk(Dumper):
+
+    title = 'Яндекс.Диск'
 
     _user_input_map = {
         'url_video': 'Video URL (https://disk.yandex.ru/i/xxx)',
@@ -302,5 +322,15 @@ class YandexDisk(Dumper):
 
 
 if __name__ == '__main__':
-    dumper = YandexDisk()
+
+    dumper_choices = []
+    print('Available dumpers:')
+
+    for idx, dumper in enumerate(Dumper.registry, 1):
+        print(f'{idx} — {dumper.title}')
+        dumper_choices.append(f'{idx}')
+
+    chosen = get_user_input('Select dumper number', choices=dumper_choices)
+
+    dumper = Dumper.registry[int(chosen)-1]()
     dumper.run()
