@@ -31,4 +31,4 @@
 
 .. code-block:: bash
 
-    $ python3 webinarru.py
+    $ python3 webinar.py
