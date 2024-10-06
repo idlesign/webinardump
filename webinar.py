@@ -37,9 +37,9 @@ configure_logging(logger=LOGGER)
 
 class Dumper:
 
-    user_input_map: dict[str, str] = None
+    _user_input_map: dict[str, str] = None
 
-    headers: dict[str, str] = {
+    _headers: dict[str, str] = {
         'Connection': 'keep-alive',
         'Accept': '*/*',
         'User-Agent': (
@@ -54,9 +54,9 @@ class Dumper:
     }
 
     def __init__(self):
-        self.user_input_map = self.user_input_map or {}
-        self.session = self._get_session()
-        self.sleepy = True
+        self._user_input_map = self._user_input_map or {}
+        self._session = self._get_session()
+        self._sleepy = True
 
     @staticmethod
     def _get_user_input(prompt: str) -> str:
@@ -68,13 +68,13 @@ class Dumper:
 
     def _get_session(self) -> Session:
         session = requests.Session()
-        session.headers = self.headers
+        session.headers = self._headers
         return session
 
     def _get_args(self) -> dict:
         input_data = {}
 
-        for param, hint in self.user_input_map.items():
+        for param, hint in self._user_input_map.items():
             input_data[param] = self._get_user_input(hint)
 
         return input_data
@@ -128,13 +128,13 @@ class Dumper:
 
             chunk_url = f'{url_video_root.rstrip("/")}/{chunk_name}'
 
-            with self.session.get(chunk_url, headers=headers or {}, stream=True) as r:
+            with self._session.get(chunk_url, headers=headers or {}, stream=True) as r:
                 r.raise_for_status()
                 with open(dump_dir / chunk_name.partition('?')[0], 'wb') as f:
                     for chunk in r.iter_content(chunk_size=8192):
                         f.write(chunk)
 
-            if self.sleepy:
+            if self._sleepy:
                 sleep(choice([1, 0.5, 0.7, 0.6]))
 
     def _video_concat(self, path: Path) -> Path:
@@ -157,7 +157,7 @@ class Dumper:
         :param json:
 
         """
-        response = self.session.get(url)
+        response = self._session.get(url)
         response.raise_for_status()
 
         if json:
@@ -202,26 +202,26 @@ class Dumper:
 
         LOGGER.info(f'Video is ready: {fpath_video_target}')
 
-    def gather(self, *, url_video: str, start_chunk: str = '', **params):
+    def _gather(self, *, url_video: str, start_chunk: str = '', **params):
         raise NotImplementedError
 
     def run(self):
-        self.gather(**self._get_args())
+        self._gather(**self._get_args())
 
 
 class WebinarRu(Dumper):
 
-    user_input_map = {
+    _user_input_map = {
         'url_video': 'Video URL (with `record-new/`)',
         'url_playlist': 'Video chunk list URL (with `chunklist.m3u8`)',
     }
 
-    headers = {
-        **Dumper.headers,
+    _headers = {
+        **Dumper._headers,
         'Origin': 'https://events.webinar.ru',
     }
 
-    def gather(self, *, url_video: str, start_chunk: str = '', url_playlist: str = '', **params):
+    def _gather(self, *, url_video: str, start_chunk: str = '', url_playlist: str = '', **params):
         """Runs video dump.
 
         :param url_video: Video URL. Hint: has record-new/
@@ -255,7 +255,7 @@ class WebinarRu(Dumper):
 
 class YandexDisk(Dumper):
 
-    user_input_map = {
+    _user_input_map = {
         'url_video': 'Video URL (https://disk.yandex.ru/i/xxx)',
     }
 
@@ -288,7 +288,7 @@ class YandexDisk(Dumper):
 
         return url_playlist, resource['name']
 
-    def gather(self, *, url_video: str, start_chunk: str = '', **params):
+    def _gather(self, *, url_video: str, start_chunk: str = '', **params):
 
         manifest = self._get_manifest(url_video)
         url_playlist, title = self._get_playlist_and_title(manifest)
