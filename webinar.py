@@ -199,7 +199,7 @@ class Dumper:
 
         LOGGER.info(f'Video is ready: {fpath_video_target}')
 
-    def gather(self, **params):
+    def gather(self, *, url_video: str, start_chunk: str = '', **params):
         raise NotImplementedError
 
     def run(self):
@@ -209,8 +209,8 @@ class Dumper:
 class WebinarRu(Dumper):
 
     user_input_map = {
-        'url_entry': 'Video entry URL (with `record-new/`)',
-        'url_chunklist': 'Video chunk list URL (with `chunklist.m3u8`)',
+        'url_video': 'Video URL (with `record-new/`)',
+        'url_playlist': 'Video chunk list URL (with `chunklist.m3u8`)',
     }
 
     headers = {
@@ -218,19 +218,21 @@ class WebinarRu(Dumper):
         'Origin': 'https://events.webinar.ru',
     }
 
-    def gather(self, *, url_entry: str, url_chunklist: str, start_chunk: str = ''):
+    def gather(self, *, url_video: str, start_chunk: str = '', url_playlist: str = '', **params):
         """Runs video dump.
 
-        :param url_entry: Video entry URL. Hint: has record-new/
-        :param url_chunklist: Video chunk list URL. Hint: ends with chunklist.m3u8
+        :param url_video: Video URL. Hint: has record-new/
+        :param url_playlist: Video chunk list URL. Hint: ends with chunklist.m3u8
         :param start_chunk: Optional chunk name to continue download from.
         """
-        assert 'record-new/' in url_entry, (
-            'Unexpected entry URL format\n'
-            f'Given:    {url_entry}.\n'
+        assert url_playlist, 'Playlist URL must be specified'
+
+        assert 'record-new/' in url_video, (
+            'Unexpected video URL format\n'
+            f'Given:    {url_video}.\n'
             f'Expected: https://events.webinar.ru/xxx/yyy/record-new/aaa/bbb')
 
-        _, _, tail = url_entry.partition('record-new/')
+        _, _, tail = url_video.partition('record-new/')
         session_id, _, video_id = tail.partition('/')
 
         LOGGER.info('Getting manifest ...')
@@ -242,8 +244,8 @@ class WebinarRu(Dumper):
 
         self._video_dump(
             title=manifest['name'],
-            url_playlist=url_chunklist,
-            url_referer=url_entry,
+            url_playlist=url_playlist,
+            url_referer=url_video,
             start_chunk=start_chunk,
         )
 
@@ -251,7 +253,7 @@ class WebinarRu(Dumper):
 class YandexDisk(Dumper):
 
     user_input_map = {
-        'url_entry': 'Video entry URL (https://disk.yandex.ru/i/xxx)',
+        'url_video': 'Video URL (https://disk.yandex.ru/i/xxx)',
     }
 
     def _get_manifest(self, url: str) -> dict:
@@ -283,15 +285,15 @@ class YandexDisk(Dumper):
 
         return url_playlist, resource['name']
 
-    def gather(self, *, url_entry: str, start_chunk: str = ''):
+    def gather(self, *, url_video: str, start_chunk: str = '', **params):
 
-        manifest = self._get_manifest(url_entry)
+        manifest = self._get_manifest(url_video)
         url_playlist, title = self._get_playlist_and_title(manifest)
 
         self._video_dump(
             title=title,
             url_playlist=url_playlist,
-            url_referer=url_entry,
+            url_referer=url_video,
             start_chunk=start_chunk,
         )
 
