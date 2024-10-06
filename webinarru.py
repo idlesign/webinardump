@@ -5,7 +5,6 @@ from functools import partial
 from pathlib import Path
 from random import choice
 from time import sleep
-from typing import Union, Optional, List
 
 import requests
 
@@ -14,18 +13,18 @@ LOGGER = logging.getLogger(__name__)
 
 def configure_logging(
         *,
-        level: Optional[int] = None,
-        logger: Optional[logging.Logger] = None,
-        format: str = '%(message)s'
+        level: int = None,
+        logger: logging.Logger = None,
+        fmt: str = '%(message)s'
 ):
     """Switches on logging at a given level. For a given logger or globally.
 
     :param level:
     :param logger:
-    :param format:
+    :param fmt:
 
     """
-    logging.basicConfig(format=format, level=level if logger else None)
+    logging.basicConfig(format=fmt, level=level if logger else None)
     logger and logger.setLevel(level or logging.INFO)
 
 
@@ -49,7 +48,7 @@ session.headers = {
 }
 
 
-def get_response_simple(url: str, *, json: bool = False) -> Union[str, dict]:
+def get_response_simple(url: str, *, json: bool = False) -> str | dict:
     """Returns a text or a dictionary from a URL.
 
     :param url:
@@ -65,7 +64,7 @@ def get_response_simple(url: str, *, json: bool = False) -> Union[str, dict]:
     return response.text
 
 
-def get_chunks(url: str) -> List[str]:
+def get_chunks(url: str) -> list[str]:
     """Get video chunks names from playlist file at URL.
 
     :param url: File URL.
@@ -103,7 +102,7 @@ def concat_chunks(path: Path) -> Path:
     return path / fname_video
 
 
-def download_chunks(*, url_video_root: str, dump_dir: Path, chunk_names: List[str], start_chunk: str):
+def download_chunks(*, url_video_root: str, dump_dir: Path, chunk_names: list[str], start_chunk: str):
 
     chunks_total = len(chunk_names)
 
