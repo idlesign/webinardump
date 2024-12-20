@@ -4,6 +4,7 @@ import logging
 import re
 import shutil
 import subprocess
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from functools import partial
 from pathlib import Path
 from random import choice
@@ -77,7 +78,7 @@ class Dumper:
     def __init__(self):
         self._user_input_map = self._user_input_map or {}
         self._session = self._get_session()
-        self._sleepy = True
+        self._sleepy = False
 
     def __str__(self):
         return self.title
@@ -126,32 +127,50 @@ class Dumper:
         chunk_names: list[str],
         start_chunk: str,
         headers: dict[str, str] = None,
+        concurrent: int = 10,
     ) -> None:
 
         chunks_total = len(chunk_names)
 
-        for idx, chunk_name in enumerate(chunk_names, 1):
+        def dump(name: str, url: str, session: Session, sleepy: bool) -> None:
 
-            if chunk_name == start_chunk:
-                start_chunk = ''  # clear to allow further download
-
-            if start_chunk:
-                continue
-
-            percent = round(idx * 100 / chunks_total, 1)
-
-            LOGGER.info(f'Get {idx}/{chunks_total} ({chunk_name}) [{percent}%] ...')
-
-            chunk_url = f'{url_video_root.rstrip("/")}/{chunk_name}'
-
-            with self._session.get(chunk_url, headers=headers or {}, stream=True) as r:
+            with session.get(url, headers=headers or {}, stream=True) as r:
                 r.raise_for_status()
-                with open(dump_dir / chunk_name.partition('?')[0], 'wb') as f:
+                with open(dump_dir / name.partition('?')[0], 'wb') as f:
                     for chunk in r.iter_content(chunk_size=8192):
                         f.write(chunk)
 
-            if self._sleepy:
+            if sleepy:
                 sleep(choice([1, 0.5, 0.7, 0.6]))
+
+        with ThreadPoolExecutor(max_workers=concurrent) as executor:
+
+            future_url_map = {}
+
+            for chunk_name in chunk_names:
+
+                if chunk_name == start_chunk:
+                    start_chunk = ''  # clear to allow further download
+
+                if start_chunk:
+                    continue
+
+                chunk_url = f'{url_video_root.rstrip("/")}/{chunk_name}'
+                future_url_map[executor.submit(dump, chunk_name, chunk_url, self._session, self._sleepy)] = (
+                    chunk_name,
+                    chunk_url
+                )
+
+            if future_url_map:
+                LOGGER.info(f'Downloading up to {concurrent} files concurrently ...')
+
+                counter = 1
+                for future in as_completed(future_url_map):
+                    chunk_name, chunk_url = future_url_map[future]
+                    future.result()
+                    percent = round(counter * 100 / chunks_total, 1)
+                    counter += 1
+                    LOGGER.info(f'Got {counter}/{chunks_total} ({chunk_name}) [{percent}%] ...')
 
     def _video_concat(self, path: Path) -> Path:
 
