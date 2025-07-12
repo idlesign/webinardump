@@ -190,7 +190,7 @@ class Dumper:
                     future.result()
                     percent = round(counter * 100 / chunks_total, 1)
                     counter += 1
-                    LOGGER.info(f'Got {counter}/{chunks_total} ({chunk_name}) [{percent}%] ...')
+                    LOGGER.info(f'Got {counter}/{chunks_total} ({chunk_name.partition("?")[0]}) [{percent}%] ...')
 
     def _video_concat(self, path: Path) -> Path:
 
