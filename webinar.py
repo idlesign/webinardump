@@ -82,11 +82,12 @@ class Dumper:
         super().__init_subclass__()
         cls.registry.append(cls)
 
-    def __init__(self, *, target_dir: Path) -> None:
+    def __init__(self, *, target_dir: Path, timeout: int = 5, sleepy: bool = False) -> None:
         self._target_dir = target_dir
+        self._timeout = timeout
         self._user_input_map = self._user_input_map or {}
         self._session = self._get_session()
-        self._sleepy = False
+        self._sleepy = sleepy
 
     def __str__(self):
         return self.title
@@ -140,9 +141,9 @@ class Dumper:
 
         chunks_total = len(chunk_names)
 
-        def dump(name: str, url: str, session: Session, sleepy: bool) -> None:
+        def dump(*, name: str, url: str, session: Session, sleepy: bool, timeout: int) -> None:
 
-            with session.get(url, headers=headers or {}, stream=True) as r:
+            with session.get(url, headers=headers or {}, stream=True, timeout=timeout) as r:
                 r.raise_for_status()
                 with open(dump_dir / name.partition('?')[0], 'wb') as f:
                     for chunk in r.iter_content(chunk_size=8192):
@@ -164,10 +165,16 @@ class Dumper:
                     continue
 
                 chunk_url = f'{url_video_root.rstrip("/")}/{chunk_name}'
-                future_url_map[executor.submit(dump, chunk_name, chunk_url, self._session, self._sleepy)] = (
-                    chunk_name,
-                    chunk_url
+                submitted = executor.submit(
+                    dump,
+                    name=chunk_name,
+                    url=chunk_url,
+                    session=self._session,
+                    sleepy=self._sleepy,
+                    timeout=self._timeout,
                 )
+
+                future_url_map[submitted] = (chunk_name, chunk_url)
 
             if future_url_map:
                 LOGGER.info(f'Downloading up to {concurrent} files concurrently ...')
@@ -353,10 +360,9 @@ class YandexDisk(Dumper):
 def cli():
     parser = argparse.ArgumentParser(prog='webinardump')
     parser.add_argument('-t', '--target', type=Path, default=Path('.'), help='Directory to dump to')
+    parser.add_argument('--timeout', type=int, default=5, help='Request timeout')
 
     args = parser.parse_args()
-    target = args.target
-
 
     dumper_choices = []
     print('Available dumpers:')
@@ -367,7 +373,10 @@ def cli():
 
     chosen = get_user_input('Select dumper number', choices=dumper_choices)
 
-    dumper = Dumper.registry[int(chosen)-1](target_dir=target)
+    dumper = Dumper.registry[int(chosen)-1](
+        target_dir=args.target,
+        timeout=args.timeout,
+    )
     dumper.run()
 
 

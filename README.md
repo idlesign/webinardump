@@ -30,6 +30,9 @@ uv run webinar.py
 
 ; Указываем путь для скачивания
 uv run webinar.py --target my_webinar_dir/
+
+; Указываем таймаут запросов
+uv run webinar.py --timeout 10
 ```
 
 
