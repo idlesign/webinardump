@@ -82,9 +82,10 @@ class Dumper:
         super().__init_subclass__()
         cls.registry.append(cls)
 
-    def __init__(self, *, target_dir: Path, timeout: int = 5, sleepy: bool = False) -> None:
+    def __init__(self, *, target_dir: Path, timeout: int = 5, concurrent: int = 10, sleepy: bool = False) -> None:
         self._target_dir = target_dir
         self._timeout = timeout
+        self._concurrent = concurrent
         self._user_input_map = self._user_input_map or {}
         self._session = self._get_session()
         self._sleepy = sleepy
@@ -243,7 +244,8 @@ class Dumper:
                 dump_dir=dump_dir,
                 chunk_names=chunk_names,
                 start_chunk=start_chunk,
-                headers={'Referer': url_referer}
+                headers={'Referer': url_referer},
+                concurrent=self._concurrent,
             )
 
             fpath_video_target = Path(f'{title}.mp4').absolute()
@@ -361,6 +363,7 @@ def cli():
     parser = argparse.ArgumentParser(prog='webinardump')
     parser.add_argument('-t', '--target', type=Path, default=Path('.'), help='Directory to dump to')
     parser.add_argument('--timeout', type=int, default=5, help='Request timeout')
+    parser.add_argument('--rmax', type=int, default=10, help='Max concurrent requests number')
 
     args = parser.parse_args()
 
@@ -376,6 +379,7 @@ def cli():
     dumper = Dumper.registry[int(chosen)-1](
         target_dir=args.target,
         timeout=args.timeout,
+        concurrent=args.rmax,
     )
     dumper.run()
 

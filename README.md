@@ -33,8 +33,10 @@ uv run webinar.py --target my_webinar_dir/
 
 ; Указываем таймаут запросов
 uv run webinar.py --timeout 10
-```
 
+; Указываем максимальное количество одновременных запросов
+uv run webinar.py --rmax 20
+```
 
 ### Использование для disk.yandex.ru
 
