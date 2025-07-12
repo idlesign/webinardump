@@ -4,12 +4,14 @@
 #   "requests",
 # ]
 # ///
+import argparse
 import json
 import logging
 import re
 import shutil
 import subprocess
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from contextlib import chdir
 from functools import partial
 from pathlib import Path
 from random import choice
@@ -74,13 +76,14 @@ class Dumper:
         'Accept-Encoding': 'gzip, deflate, sdch, br',
     }
 
-    registry = []
+    registry: list[type['Dumper']] = []
 
     def __init_subclass__(cls):
         super().__init_subclass__()
         cls.registry.append(cls)
 
-    def __init__(self):
+    def __init__(self, *, target_dir: Path) -> None:
+        self._target_dir = target_dir
         self._user_input_map = self._user_input_map or {}
         self._session = self._get_session()
         self._sleepy = False
@@ -219,26 +222,28 @@ class Dumper:
 
         chunk_names = self._chunks_get_list(url_playlist)
 
-        LOGGER.info('Downloading video ...')
+        target_dir = self._target_dir
+        LOGGER.info(f'Downloading video into {target_dir} ...')
 
-        dump_dir = Path(title).absolute()
-        dump_dir.mkdir(exist_ok=True)
+        with chdir(target_dir):
+            dump_dir = (target_dir / title).absolute()
+            dump_dir.mkdir(parents=True, exist_ok=True)
 
-        url_root = url_playlist.rpartition('/')[0]  # strip playlist filename
+            url_root = url_playlist.rpartition('/')[0]  # strip playlist filename
 
-        self._chunks_download(
-            url_video_root=url_root,
-            dump_dir=dump_dir,
-            chunk_names=chunk_names,
-            start_chunk=start_chunk,
-            headers={'Referer': url_referer}
-        )
+            self._chunks_download(
+                url_video_root=url_root,
+                dump_dir=dump_dir,
+                chunk_names=chunk_names,
+                start_chunk=start_chunk,
+                headers={'Referer': url_referer}
+            )
 
-        fpath_video_target = Path(f'{title}.mp4').absolute()
-        fpath_video = self._video_concat(dump_dir)
+            fpath_video_target = Path(f'{title}.mp4').absolute()
+            fpath_video = self._video_concat(dump_dir)
 
-        shutil.move(fpath_video, fpath_video_target)
-        shutil.rmtree(dump_dir, ignore_errors=True)
+            shutil.move(fpath_video, fpath_video_target)
+            shutil.rmtree(dump_dir, ignore_errors=True)
 
         LOGGER.info(f'Video is ready: {fpath_video_target}')
 
@@ -345,7 +350,13 @@ class YandexDisk(Dumper):
         )
 
 
-if __name__ == '__main__':
+def cli():
+    parser = argparse.ArgumentParser(prog='webinardump')
+    parser.add_argument('-t', '--target', type=Path, default=Path('.'), help='Directory to dump to')
+
+    args = parser.parse_args()
+    target = args.target
+
 
     dumper_choices = []
     print('Available dumpers:')
@@ -356,5 +367,10 @@ if __name__ == '__main__':
 
     chosen = get_user_input('Select dumper number', choices=dumper_choices)
 
-    dumper = Dumper.registry[int(chosen)-1]()
+    dumper = Dumper.registry[int(chosen)-1](target_dir=target)
     dumper.run()
+
+
+
+if __name__ == '__main__':
+    cli()

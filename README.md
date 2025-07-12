@@ -27,6 +27,9 @@
 
 ```shell
 uv run webinar.py
+
+; Указываем путь для скачивания
+uv run webinar.py --target my_webinar_dir/
 ```
 
 
