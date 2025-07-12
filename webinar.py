@@ -19,6 +19,7 @@ from time import sleep
 
 import requests
 from requests import Session
+from requests.adapters import HTTPAdapter, Retry
 
 LOGGER = logging.getLogger(__name__)
 
@@ -96,6 +97,9 @@ class Dumper:
     def _get_session(self) -> Session:
         session = requests.Session()
         session.headers = self._headers
+        retries = Retry(total=3, backoff_factor=0.1)
+        session.mount('http://', HTTPAdapter(max_retries=retries))
+        session.mount('https://', HTTPAdapter(max_retries=retries))
         return session
 
     def _get_args(self) -> dict:
