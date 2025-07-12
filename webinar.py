@@ -83,7 +83,7 @@ class Dumper:
         super().__init_subclass__()
         cls.registry.append(cls)
 
-    def __init__(self, *, target_dir: Path, timeout: int = 5, concurrent: int = 10, sleepy: bool = False) -> None:
+    def __init__(self, *, target_dir: Path, timeout: int = 3, concurrent: int = 10, sleepy: bool = False) -> None:
         self._target_dir = target_dir
         self._timeout = timeout
         self._concurrent = concurrent
@@ -97,7 +97,7 @@ class Dumper:
     def _get_session(self) -> Session:
         session = requests.Session()
         session.headers = self._headers
-        retries = Retry(total=3, backoff_factor=0.1)
+        retries = Retry(total=3, backoff_factor=0.1, status_forcelist=[500])
         session.mount('http://', HTTPAdapter(max_retries=retries))
         session.mount('https://', HTTPAdapter(max_retries=retries))
         return session
@@ -366,7 +366,7 @@ class YandexDisk(Dumper):
 def cli():
     parser = argparse.ArgumentParser(prog='webinardump')
     parser.add_argument('-t', '--target', type=Path, default=Path('.'), help='Directory to dump to')
-    parser.add_argument('--timeout', type=int, default=5, help='Request timeout')
+    parser.add_argument('--timeout', type=int, default=3, help='Request timeout')
     parser.add_argument('--rmax', type=int, default=10, help='Max concurrent requests number')
 
     args = parser.parse_args()
