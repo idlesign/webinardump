@@ -15,6 +15,7 @@ from contextlib import chdir
 from functools import partial
 from pathlib import Path
 from random import choice
+from threading import Lock
 from time import sleep
 
 import requests
@@ -95,6 +96,7 @@ class Dumper:
         return self.title
 
     def _get_session(self) -> Session:
+        # todo при ошибках сессия в нитях блокируется. можно попробовать несколько сессий
         session = requests.Session()
         session.headers = self._headers
         retries = Retry(total=3, backoff_factor=0.1, status_forcelist=[500])
@@ -146,13 +148,29 @@ class Dumper:
 
         chunks_total = len(chunk_names)
 
+        progress_file = (dump_dir / 'files.txt')
+        progress_file.touch()
+
+        files_done = dict.fromkeys(progress_file.read_text().splitlines())
+        lock = Lock()
+
         def dump(*, name: str, url: str, session: Session, sleepy: bool, timeout: int) -> None:
+
+            name = name.partition('?')[0]
+
+            if name in files_done:
+                LOGGER.info(f'File {name} has been already downloaded before. Skipping.')
+                return
 
             with session.get(url, headers=headers or {}, stream=True, timeout=timeout) as r:
                 r.raise_for_status()
-                with open(dump_dir / name.partition('?')[0], 'wb') as f:
+                with open(dump_dir / name, 'wb') as f:
                     for chunk in r.iter_content(chunk_size=8192):
                         f.write(chunk)
+
+            files_done[name] = True
+            with lock:
+                progress_file.write_text('\n'.join(files_done))
 
             if sleepy:
                 sleep(choice([1, 0.5, 0.7, 0.6]))
