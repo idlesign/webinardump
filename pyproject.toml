@@ -1,0 +1,82 @@
+[project]
+name = "webinardump"
+dynamic = ["version"]
+description = "Make local backup copies of webinars"
+authors = [
+    { name = "Igor Starikov", email = "idlesign@yandex.ru" }
+]
+readme = "README.md"
+license = "BSD-3-Clause"
+license-files = ["LICENSE"]
+requires-python = ">=3.11"
+keywords = ["backup", "webinars"]
+dependencies = [
+    "requests>=2.31.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/idlesign/webinardump"
+
+[project.scripts]
+webinardump = "webinardump.cli:main"
+
+[dependency-groups]
+dev = [
+    {include-group = "linters"},
+    {include-group = "tests"},
+]
+linters = [
+#    "ruff",
+]
+tests = [
+    "pytest",
+    "pytest-responsemock",
+    "pytest-datafixtures",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "src/webinardump/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/webinardump"]
+
+[tool.hatch.build.targets.sdist]
+packages = ["src/"]
+
+[tool.pytest.ini_options]
+testpaths = [
+    "tests",
+]
+
+[tool.coverage.run]
+source = [
+    "src/",
+]
+omit = [
+    "*/cli.py",
+]
+
+[tool.coverage.report]
+fail_under = 99.00
+exclude_also = [
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+]
+
+[tool.tox]
+skip_missing_interpreters = true
+env_list = [
+  "py311",
+  "py312",
+  "py313",
+]
+
+[tool.tox.env_run_base]
+dependency_groups = ["tests"]
+commands = [
+  ["pytest", { replace = "posargs", default = ["tests"], extend = true }],
+]

@@ -1,15 +1,6 @@
-#! /usr/bin/env python3
-# /// script
-# dependencies = [
-#   "requests",
-# ]
-# ///
-import argparse
-import json
-import logging
-import re
 import shutil
 import subprocess
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import chdir
 from functools import partial
@@ -22,40 +13,7 @@ import requests
 from requests import Session
 from requests.adapters import HTTPAdapter, Retry
 
-LOGGER = logging.getLogger(__name__)
-
-
-def configure_logging(
-        *,
-        level: int = None,
-        logger: logging.Logger = None,
-        fmt: str = '%(message)s'
-):
-    """Switches on logging at a given level. For a given logger or globally.
-
-    :param level:
-    :param logger:
-    :param fmt:
-
-    """
-    logging.basicConfig(format=fmt, level=level if logger else None)
-    logger and logger.setLevel(level or logging.INFO)
-
-
-configure_logging(logger=LOGGER)
-
-
-def get_user_input(prompt: str, *, choices: list[str] = None) -> str:
-
-    choices = set(choices or [])
-
-    while True:
-        data = input(f'{prompt}: ')
-        data = data.strip()
-        if not data or (choices and data not in choices):
-            continue
-
-        return data
+from ..utils import LOGGER, call
 
 
 class Dumper:
@@ -104,11 +62,11 @@ class Dumper:
         session.mount('https://', HTTPAdapter(max_retries=retries))
         return session
 
-    def _get_args(self) -> dict:
+    def _get_args(self, *, get_param_hook: Callable[[str, str], str]) -> dict:
         input_data = {}
 
         for param, hint in self._user_input_map.items():
-            input_data[param] = get_user_input(hint)
+            input_data[param] = get_param_hook(param, hint)
 
         return input_data
 
@@ -165,8 +123,7 @@ class Dumper:
             with session.get(url, headers=headers or {}, stream=True, timeout=timeout) as r:
                 r.raise_for_status()
                 with open(dump_dir / name, 'wb') as f:
-                    for chunk in r.iter_content(chunk_size=8192):
-                        f.write(chunk)
+                    f.writelines(r.iter_content(chunk_size=8192))
 
             files_done[name] = True
             with lock:
@@ -216,10 +173,9 @@ class Dumper:
 
         fname_video = 'all_chunks.mp4'
         fname_index = 'all_chunks.txt'
-        call = partial(subprocess.check_call, cwd=path, shell=True)
 
-        call(f'for i in `ls *.ts | sort -V`; do echo "file $i"; done >> {fname_index}')
-        call(f'ffmpeg -f concat -i {fname_index} -c copy -bsf:a aac_adtstoasc {fname_video}')
+        call(f'for i in `ls *.ts | sort -V`; do echo "file $i"; done >> {fname_index}', path=path)
+        call(f'ffmpeg -f concat -i {fname_index} -c copy -bsf:a aac_adtstoasc {fname_video}', path=path)
 
         return path / fname_video
 
@@ -245,7 +201,7 @@ class Dumper:
         url_playlist: str,
         url_referer: str,
         start_chunk: str = '',
-    ):
+    ) -> Path:
         assert url_playlist.endswith('m3u8'), f'No playlist in `{url_playlist}`'
 
         LOGGER.info(f'Title: {title}')
@@ -266,7 +222,7 @@ class Dumper:
                 dump_dir=dump_dir,
                 chunk_names=chunk_names,
                 start_chunk=start_chunk,
-                headers={'Referer': url_referer},
+                headers={'Referer': url_referer.strip()},
                 concurrent=self._concurrent,
             )
 
@@ -277,135 +233,11 @@ class Dumper:
             shutil.rmtree(dump_dir, ignore_errors=True)
 
         LOGGER.info(f'Video is ready: {fpath_video_target}')
+        return fpath_video_target
 
-    def _gather(self, *, url_video: str, start_chunk: str = '', **params):
+    def _gather(self, *, url_video: str, start_chunk: str = '', **params) -> Path:
         raise NotImplementedError
 
-    def run(self):
-        self._gather(**self._get_args())
-
-
-class WebinarRu(Dumper):
-
-    title = 'webinar.ru'
-
-    _user_input_map = {
-        'url_video': 'Video URL (with `record-new/`)',
-        'url_playlist': 'Video chunk list URL (with `chunklist.m3u8`)',
-    }
-
-    _headers = {
-        **Dumper._headers,
-        'Origin': 'https://events.webinar.ru',
-    }
-
-    def _gather(self, *, url_video: str, start_chunk: str = '', url_playlist: str = '', **params):
-        """Runs video dump.
-
-        :param url_video: Video URL. Hint: has record-new/
-        :param url_playlist: Video chunk list URL. Hint: ends with chunklist.m3u8
-        :param start_chunk: Optional chunk name to continue download from.
-        """
-        assert url_playlist, 'Playlist URL must be specified'
-
-        assert 'record-new/' in url_video, (
-            'Unexpected video URL format\n'
-            f'Given:    {url_video}.\n'
-            f'Expected: https://events.webinar.ru/xxx/yyy/record-new/aaa/bbb')
-
-        _, _, tail = url_video.partition('record-new/')
-        session_id, _, video_id = tail.partition('/')
-
-        LOGGER.info('Getting manifest ...')
-
-        manifest = self._get_response_simple(
-            f'https://events.webinar.ru/api/eventsessions/{session_id}/record/isviewable?recordAccessToken={video_id}',
-            json=True
-        )
-
-        self._video_dump(
-            title=manifest['name'],
-            url_playlist=url_playlist,
-            url_referer=url_video,
-            start_chunk=start_chunk,
-        )
-
-
-class YandexDisk(Dumper):
-
-    title = 'Яндекс.Диск'
-
-    _user_input_map = {
-        'url_video': 'Video URL (https://disk.yandex.ru/i/xxx)',
-    }
-
-    def _get_manifest(self, url: str) -> dict:
-        LOGGER.debug(f'Getting manifest from {url} ...')
-
-        contents = self._get_response_simple(url)
-        manifest = re.findall(r'id="store-prefetch">([^<]+)</script', contents)
-        assert manifest, f'Manifest not found for {url}'
-        manifest = manifest[0]
-        manifest = json.loads(manifest)
-        return manifest
-
-    def _get_playlist_and_title(self, manifest: dict) -> tuple[str, str]:
-
-        resources = list(manifest['resources'].values())
-        resource = resources[0]
-
-        dimension_max = 0
-        url_playlist = '<none>'
-
-        for stream_info in resource['videoStreams']['videos']:
-            dimension, *_ = stream_info['dimension'].partition('p')
-            if not dimension.isnumeric():
-                continue  # e.g. 'adaptive'
-            dimension = int(dimension)
-            if dimension_max < dimension:
-                dimension_max = dimension
-                url_playlist = stream_info['url']
-
-        return url_playlist, resource['name']
-
-    def _gather(self, *, url_video: str, start_chunk: str = '', **params):
-
-        manifest = self._get_manifest(url_video)
-        url_playlist, title = self._get_playlist_and_title(manifest)
-
-        self._video_dump(
-            title=title,
-            url_playlist=url_playlist,
-            url_referer=url_video,
-            start_chunk=start_chunk,
-        )
-
-
-def cli():
-    parser = argparse.ArgumentParser(prog='webinardump')
-    parser.add_argument('-t', '--target', type=Path, default=Path('.'), help='Directory to dump to')
-    parser.add_argument('--timeout', type=int, default=3, help='Request timeout')
-    parser.add_argument('--rmax', type=int, default=10, help='Max concurrent requests number')
-
-    args = parser.parse_args()
-
-    dumper_choices = []
-    print('Available dumpers:')
-
-    for idx, dumper in enumerate(Dumper.registry, 1):
-        print(f'{idx} — {dumper.title}')
-        dumper_choices.append(f'{idx}')
-
-    chosen = get_user_input('Select dumper number', choices=dumper_choices)
-
-    dumper = Dumper.registry[int(chosen)-1](
-        target_dir=args.target,
-        timeout=args.timeout,
-        concurrent=args.rmax,
-    )
-    dumper.run()
-
-
-
-if __name__ == '__main__':
-    cli()
+    def run(self, params_or_hook: Callable[[str, str], str] | dict[str, str]) -> Path:
+        params = params_or_hook if isinstance(params_or_hook, dict) else self._get_args(get_param_hook=params_or_hook)
+        return self._gather(**params)
