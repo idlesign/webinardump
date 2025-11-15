@@ -57,7 +57,7 @@ $ uv tool upgrade webinardump
 ; Указываем путь для скачивания - my_webinar_dir/
 ; Указываем таймаут запросов - 10 секунд
 ; Указываем максимальное количество одновременных запросов - 20
-uv run webinar.py --target my_webinar_dir/ --timeout 10 --rmax 20
+$ webinardump --target my_webinar_dir/ --timeout 10 --rmax 20
 ```
 Приложение скачает фрагменты вебинара, а потом соберёт из них единый файл.
 
