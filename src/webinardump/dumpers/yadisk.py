@@ -1,16 +1,17 @@
 import json
 import re
 from pathlib import Path
+from typing import ClassVar
 
-from .base import Dumper
 from ..utils import LOGGER
+from .base import Dumper
 
 
 class YandexDisk(Dumper):
 
     title = 'Яндекс.Диск'
 
-    _user_input_map = {
+    _user_input_map: ClassVar[dict[str, str]] = {
         'url_video': 'Video URL (https://disk.yandex.ru/i/xxx)',
     }
 

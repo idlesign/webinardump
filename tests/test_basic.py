@@ -1,4 +1,4 @@
-from webinardump.dumpers import YandexDisk, WebinarRu
+from webinardump.dumpers import WebinarRu, YandexDisk
 
 CALLS = [
     'for i in `ls *.ts | sort -V`; do echo "file $i"; done >> all_chunks.txt',

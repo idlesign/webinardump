@@ -3,10 +3,9 @@ import logging
 from pathlib import Path
 
 from .dumpers import Dumper
-from .utils import LOGGER
 
 
-def get_user_input(param: str, hint: str, *, choices: list[str] = None) -> str:
+def get_user_input(param: str, hint: str, *, choices: list[str] | None = None) -> str:
 
     choices = set(choices or [])
 

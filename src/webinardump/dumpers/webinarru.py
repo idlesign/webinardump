@@ -1,19 +1,20 @@
 from pathlib import Path
+from typing import ClassVar
 
-from .base import Dumper
 from ..utils import LOGGER
+from .base import Dumper
 
 
 class WebinarRu(Dumper):
 
     title = 'webinar.ru'
 
-    _user_input_map = {
+    _user_input_map: ClassVar[dict[str, str]] = {
         'url_video': 'Video URL (with `record-new/`)',
         'url_playlist': 'Video chunk list URL (with `chunklist.m3u8`)',
     }
 
-    _headers = {
+    _headers: ClassVar[dict[str, str]] = {
         **Dumper._headers,
         'Origin': 'https://events.webinar.ru',
     }

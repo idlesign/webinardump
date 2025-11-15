@@ -1,13 +1,12 @@
 import shutil
-import subprocess
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import chdir
-from functools import partial
 from pathlib import Path
 from random import choice
 from threading import Lock
 from time import sleep
+from typing import ClassVar
 
 import requests
 from requests import Session
@@ -20,9 +19,9 @@ class Dumper:
 
     title: str = ''
 
-    _user_input_map: dict[str, str] = None
+    _user_input_map: ClassVar[dict[str, str]]
 
-    _headers: dict[str, str] = {
+    _headers: ClassVar[dict[str, str]] = {
         'Connection': 'keep-alive',
         'Accept': '*/*',
         'User-Agent': (
@@ -36,7 +35,7 @@ class Dumper:
         'Accept-Encoding': 'gzip, deflate, sdch, br',
     }
 
-    registry: list[type['Dumper']] = []
+    registry: ClassVar[list[type['Dumper']]] = []
 
     def __init_subclass__(cls):
         super().__init_subclass__()
@@ -100,7 +99,7 @@ class Dumper:
         dump_dir: Path,
         chunk_names: list[str],
         start_chunk: str,
-        headers: dict[str, str] = None,
+        headers: dict[str, str] | None = None,
         concurrent: int = 10,
     ) -> None:
 
@@ -122,7 +121,7 @@ class Dumper:
 
             with session.get(url, headers=headers or {}, stream=True, timeout=timeout) as r:
                 r.raise_for_status()
-                with open(dump_dir / name, 'wb') as f:
+                with (dump_dir / name).open('wb') as f:
                     f.writelines(r.iter_content(chunk_size=8192))
 
             files_done[name] = True

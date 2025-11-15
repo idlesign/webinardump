@@ -15,4 +15,4 @@ def mock_call(monkeypatch):
 
     monkeypatch.setattr("webinardump.utils.check_call", mock_call)
 
-    yield calls
+    return calls
