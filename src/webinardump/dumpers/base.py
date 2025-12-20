@@ -12,7 +12,7 @@ import requests
 from requests import Session
 from requests.adapters import HTTPAdapter, Retry
 
-from ..utils import LOGGER, call
+from ..utils import LOGGER, call, get_files_sorted
 
 
 class Dumper:
@@ -34,6 +34,8 @@ class Dumper:
         'Accept-Language': 'ru,en;q=0.9',
         'Accept-Encoding': 'gzip, deflate, sdch, br',
     }
+
+    _media_ext: ClassVar[set[str]] = {'.ts', '.m4s'}
 
     registry: ClassVar[list[type['Dumper']]] = []
 
@@ -69,26 +71,69 @@ class Dumper:
 
         return input_data
 
-    def _chunks_get_list(self, url: str) -> list[str]:
+    def _chunks_get_list(self, url: str, *, url_prefix: str = '') -> list[str]:
         """Get video chunks names from playlist file at URL.
 
+        * Links to other playlists:
+            #EXTM3U
+            #EXT-X-VERSION:7
+            #EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",AUTOSELECT=YES,NAME="xxx",URI="a1/index.m3u8"
+            #EXT-X-STREAM-INF:BANDWIDTH=5205192,RESOLUTION=1920x1080,CODECS="avc1.42C02A,mp4a.40.2",AUDIO="audio"
+            v1/index.m3u8
+
+        * Links to chunks:
+            #EXTM3U
+            #EXT-X-VERSION:6
+            #EXT-X-MEDIA-SEQUENCE:1
+            #EXT-X-INDEPENDENT-SEGMENTS
+            #EXT-X-TARGETDURATION:12
+            #EXT-X-MAP:URI="init/1.m4s"
+            #EXTINF:2.000,
+            media/1.m4s
+            #EXT-X-DISCONTINUITY
+
         :param url: File URL.
+        :param url_prefix: File URL prefix.
 
         """
         LOGGER.info(f'Getting video chunks from playlist {url} ...')
 
-        playlist = self._get_response_simple(url)
+        sub_playlist = self._get_response_simple(url)
+        playlists = []
         chunk_lists = []
+        media_ext = self._media_ext
 
-        for line in playlist.splitlines():
+        for line in sub_playlist.splitlines():
             line = line.strip()
 
-            if not line.partition('?')[0].endswith('.ts'):
+            if 'EXT-X-MAP:URI' in line:
+                # naive parsing. todo: respect EXT-X-DISCONTINUITY and EXT-X-MEDIA:TYPE=AUDIO,...,AUTOSELECT=YES
+                line = line.rpartition("=")[2].strip('"')
+
+            if line.endswith('.m3u8'):
+                playlists.append(line)
                 continue
+
+            path = Path(line.partition('?')[0])
+            if path.suffix not in media_ext:
+                continue
+
+            if url_prefix:
+                line = f'{url_prefix}/{line}'
 
             chunk_lists.append(line)
 
-        assert chunk_lists, 'No .ts chunks found in playlist file'
+        if playlists:
+            LOGGER.info('Sub playlists found. Will use the first one ...')
+
+            sub_playlist = playlists[0]
+            sub_playlist_url_prefix = sub_playlist.rpartition('/')[0]
+            sub_playlist_url = f'{url.rpartition("/")[0]}/{sub_playlist}'
+
+            chunk_lists = self._chunks_get_list(sub_playlist_url, url_prefix=sub_playlist_url_prefix)
+
+        else:
+            assert chunk_lists, 'No video chunks found in playlist file'
 
         return chunk_lists
 
@@ -111,17 +156,20 @@ class Dumper:
         files_done = dict.fromkeys(progress_file.read_text().splitlines())
         lock = Lock()
 
-        def dump(*, name: str, url: str, session: Session, sleepy: bool, timeout: int) -> None:
+        def dump(*, name: str, file_idx: int, url: str, session: Session, sleepy: bool, timeout: int) -> None:
 
-            name = name.partition('?')[0]
+            name = name.partition('?')[0]  # drop GET-args
 
             if name in files_done:
-                LOGGER.info(f'File {name} has been already downloaded before. Skipping.')
+                LOGGER.info(f'File {name} has already been downloaded before. Skipping.')
                 return
+
+            filename = name.rpartition('/')[2]  # drop url prefix
+            filename = f'{file_idx}_{filename}'
 
             with session.get(url, headers=headers or {}, stream=True, timeout=timeout) as r:
                 r.raise_for_status()
-                with (dump_dir / name).open('wb') as f:
+                with (dump_dir / filename).open('wb') as f:
                     f.writelines(r.iter_content(chunk_size=8192))
 
             files_done[name] = True
@@ -135,7 +183,7 @@ class Dumper:
 
             future_url_map = {}
 
-            for chunk_name in chunk_names:
+            for idx, chunk_name in enumerate(chunk_names, 1):
 
                 if chunk_name == start_chunk:
                     start_chunk = ''  # clear to allow further download
@@ -147,6 +195,7 @@ class Dumper:
                 submitted = executor.submit(
                     dump,
                     name=chunk_name,
+                    file_idx=idx,
                     url=chunk_url,
                     session=self._session,
                     sleepy=self._sleepy,
@@ -173,8 +222,29 @@ class Dumper:
         fname_video = 'all_chunks.mp4'
         fname_index = 'all_chunks.txt'
 
-        call(f'for i in `ls *.ts | sort -V`; do echo "file $i"; done >> {fname_index}', path=path)
-        call(f'ffmpeg -f concat -i {fname_index} -c copy -bsf:a aac_adtstoasc {fname_video}', path=path)
+        mode_m4s = False
+
+        filenames = get_files_sorted(path, suffixes=self._media_ext)
+
+        for filename in filenames:
+            if filename.endswith('m4s'):
+                mode_m4s = True
+                break
+
+        def create_index(line_tpl: str = '%s'):
+            with (path / fname_index).open('w') as f:
+                f.writelines([f'{line_tpl % fname}\n' for fname in filenames])
+
+        if mode_m4s:
+            fname_raw = 'all_chunks.mp4'
+            create_index()
+            call(f'xargs cat < {fname_index} >> {fname_raw}', path=path)
+            call(f'ffmpeg -y -i {fname_raw} -c copy {fname_video}', path=path)
+
+        else:
+            # presumably ts
+            create_index('file %s')
+            call(f'ffmpeg -y -f concat -i {fname_index} -c copy -bsf:a aac_adtstoasc {fname_video}', path=path)
 
         return path / fname_video
 

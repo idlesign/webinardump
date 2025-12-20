@@ -1,8 +1,7 @@
 from webinardump.dumpers import WebinarRu, YandexDisk
 
 CALLS = [
-    'for i in `ls *.ts | sort -V`; do echo "file $i"; done >> all_chunks.txt',
-    'ffmpeg -f concat -i all_chunks.txt -c copy -bsf:a aac_adtstoasc all_chunks.mp4'
+    'ffmpeg -y -f concat -i all_chunks.txt -c copy -bsf:a aac_adtstoasc all_chunks.mp4'
 ]
 
 
