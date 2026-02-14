@@ -9,7 +9,8 @@ def mock_call(monkeypatch):
 
     def mock_call(cmd, **kwargs):
         if 'ffmpeg' in cmd:
-            Path('yatst/all_chunks.mp4').write_bytes(b'')
+            cwd = kwargs.get('cwd') or Path()
+            (Path(cwd) / 'all_chunks.mp4').write_bytes(b'')
 
         calls.append(cmd)
 

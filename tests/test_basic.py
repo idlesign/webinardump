@@ -23,6 +23,26 @@ def test_yadisk(response_mock, tmp_path, datafix_read, datafix_readbin, mock_cal
         assert mock_call == CALLS
 
 
+def test_yadisk_shared(response_mock, tmp_path, datafix_read, datafix_readbin, mock_call):
+    data_page = datafix_read('yadisk_shared_page.html')
+    data_streams = datafix_read('yadisk_get_video_streams.json')
+    data_m3u = datafix_read('vid.m3u')
+    data_ts = datafix_readbin('empty.ts')
+
+    with response_mock([
+        'GET https://disk.yandex.ru/d/share_hash/video.mp4 -> 200:' + data_page,
+        'POST https://disk.yandex.ru/public/api/get-video-streams -> 200:' + data_streams,
+        f'GET https://here/there.m3u8 -> 200:{data_m3u}',
+        b'GET https://here/1.ts?some=other1 -> 200:' + data_ts,
+        b'GET https://here/2.ts?some=other2 -> 200:' + data_ts,
+    ]):
+        fpath = YandexDisk(target_dir=tmp_path).run({
+            'url_video': 'https://disk.yandex.ru/d/share_hash/video.mp4',
+        })
+        assert fpath
+        assert mock_call == CALLS
+
+
 def test_webinarru(response_mock, tmp_path, datafix_read, datafix_readbin, mock_call):
     data_manifest = datafix_read('manifest_webinarru.json')
     data_m3u = datafix_read('vid.m3u')

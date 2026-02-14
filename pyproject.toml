@@ -12,6 +12,7 @@ requires-python = ">=3.11"
 keywords = ["backup", "webinars"]
 dependencies = [
     "requests>=2.31.0",
+    "beautifulsoup4>=4.13.1",
 ]
 
 [project.urls]

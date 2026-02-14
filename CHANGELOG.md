@@ -1,5 +1,8 @@
 # webinardump changelog
 
+### Unreleased
+* ++ Yandex.Disk. Add support for shared video.
+
 ### v0.1.1 [2025-11-15]
 * ** Minor fixes.
 

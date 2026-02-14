@@ -43,10 +43,6 @@ ignore = []
 
 
 [lint.extend-per-file-ignores]
-"tests/*" = []
-"src/sponsrdump/utils.py" = [
-    "G004",
-]
-"src/sponsrdump/cli.py" = [
-    "RUF001",
+"src/webinardump/*" = [
+    "RUF001"
 ]

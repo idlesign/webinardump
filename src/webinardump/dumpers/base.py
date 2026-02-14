@@ -1,14 +1,18 @@
+import json
 import shutil
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import chdir
+from datetime import UTC, datetime
 from pathlib import Path
 from random import choice
 from threading import Lock
 from time import sleep
 from typing import ClassVar
+from urllib.parse import quote, unquote
 
 import requests
+from bs4 import BeautifulSoup
 from requests import Session
 from requests.adapters import HTTPAdapter, Retry
 
@@ -27,7 +31,7 @@ class Dumper:
         'User-Agent': (
             'Mozilla/5.0 (X11; Linux x86_64) '
             'AppleWebKit/537.36 (KHTML, like Gecko) '
-            'Chrome/79.0.3945.136 YaBrowser/20.2.3.320 (beta) Yowser/2.5 Safari/537.36'
+            'Chrome/138.0.0.0 YaBrowser/25.8.0.0 Safari/537.36'
         ),
         'Sec-Fetch-Site': 'same-site',
         'Sec-Fetch-Mode': 'cors',
@@ -167,6 +171,8 @@ class Dumper:
             filename = name.rpartition('/')[2]  # drop url prefix
             filename = f'{file_idx}_{filename}'
 
+            LOGGER.info(f'Trying to download {filename} {url} ...')
+
             with session.get(url, headers=headers or {}, stream=True, timeout=timeout) as r:
                 r.raise_for_status()
                 with (dump_dir / filename).open('wb') as f:
@@ -248,20 +254,60 @@ class Dumper:
 
         return path / fname_video
 
-    def _get_response_simple(self, url: str, *, json: bool = False) -> str | dict:
+    def _get_soup(self, content: str) -> BeautifulSoup:
+        return BeautifulSoup(content, 'html.parser')
+
+    def _extract_js_objects(self, contents: str, *, key: str = '') -> list[dict]:
+        """Returns a list of js-objects (as dicts) for html contents.
+
+        :param contents: Html.
+        :param key: Object key to filter objects.
+        """
+        soup = self._get_soup(contents)
+        found = []
+
+        for script in soup.find_all('script'):
+            text = script.text.strip()
+            if text.startswith('{') and text.endswith('}'):
+                try:
+                    obj = json.loads(text)
+                    if not key or key in obj:
+                        found.append(obj)
+
+                except json.decoder.JSONDecodeError:
+                    pass
+
+        return found
+
+    def _handle_response_simple(self, response, *, json: bool = False, dump: bool = False) -> str | dict:
+        """Returns a text or a dictionary from a URL.
+
+        :param response:
+        :param json: Decode json
+        :param dump: Dump response to file
+
+        """
+        response.raise_for_status()
+        val = response.json() if json else response.text
+
+        if dump:
+            Path(f'dmp_{datetime.now(tz=UTC)}.dump').write_text(val)
+
+        return val
+
+    def _get_response_simple(self, url: str, *, json: bool = False, dump: bool = False) -> str | dict:
         """Returns a text or a dictionary from a URL.
 
         :param url:
-        :param json:
+        :param json: Decode json
+        :param dump: Dump response to file
 
         """
         response = self._session.get(url)
-        response.raise_for_status()
+        return self._handle_response_simple(response, json=json, dump=dump)
 
-        if json:
-            return response.json()
-
-        return response.text
+    def _sanitize_title(self, title: str) -> str:
+        return unquote(title)
 
     def _video_dump(
         self,
@@ -272,6 +318,7 @@ class Dumper:
         start_chunk: str = '',
     ) -> Path:
         assert url_playlist.endswith('m3u8'), f'No playlist in `{url_playlist}`'
+        title = self._sanitize_title(title)
 
         LOGGER.info(f'Title: {title}')
 
@@ -291,7 +338,7 @@ class Dumper:
                 dump_dir=dump_dir,
                 chunk_names=chunk_names,
                 start_chunk=start_chunk,
-                headers={'Referer': url_referer.strip()},
+                headers={'Referer': quote(url_referer.strip())},
                 concurrent=self._concurrent,
             )
 

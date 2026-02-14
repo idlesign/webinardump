@@ -13,7 +13,7 @@
 
 ## Откуда качает
 
-* Яндекс.Диск (записи стримов)
+* Яндекс.Диск (записи стримов, общие файлы)
 * webinar.ru
 
 
@@ -64,7 +64,7 @@ $ webinardump --target my_webinar_dir/ --timeout 10 --rmax 20
 
 ### disk.yandex.ru
 
-1. Взять ссылку на вебинар (запись стрима). Вида https://disk.yandex.ru/i/xxx
+1. Взять ссылку на вебинар. Вида https://disk.yandex.ru/i/xxx или https://disk.yandex.ru/d/xxx/yyy.mp4
 2. Запустить скачиватель и скормить ему ссылку из предыдущего пункта.
 
 
